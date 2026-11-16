@@ -32,7 +32,7 @@ def main(page: ft.Page):
 
     S = {"stage": int(saved("stage") or 0),       # 0 = not started, 1 = Tailscale page opened, 2 = Moonlight page opened, 3 = done
          "tok": None, "connected": False, "paired": bool(saved("paired")), "voice": saved("voice"),
-         "entry": False, "t": 0.0}
+         "entry": False, "t": 0.0, "auto": None}  # auto: "ts" = waiting for user to finish Tailscale
 
     # ------------------------------------------------------------ small UI helpers
     def gbtn(label, on_click, glyph=None, primary=True):
@@ -107,9 +107,13 @@ def main(page: ft.Page):
                      pin_field, gbtn("Send PIN to host", lambda e: pair(), ft.Icons.SEND),
                      subtitle="Moonlight → Settings → Video: 1280x720, 5 Mbps, V-Sync / frame pacing on.")
 
-    name_field = ft.TextField(label="Your name (shown in voice chat)", value=saved("name"), max_length=24, border_radius=12,
-                              border_color="#2E3566", bgcolor="#0C0F24", on_change=lambda e: save("name", name_field.value))
-    voice_card = card("Voice chat", name_field, gbtn("Join voice chat", lambda e: join_voice(), ft.Icons.MIC),
+    def name_changed(e):
+        save("name", name_field.value.strip()); who.value = name_field.value.strip() or "Client"; page.update()
+
+    name_field = ft.TextField(label="Your name", value=saved("name"), max_length=24, border_radius=12, border_color="#2E3566",
+                              bgcolor="#0C0F24", prefix_icon=ft.Icons.PERSON, on_change=name_changed)
+    name_card = card("Your name", name_field, subtitle="Shown to the host and in voice chat.")
+    voice_card = card("Voice chat", gbtn("Join voice chat", lambda e: join_voice(), ft.Icons.MIC),
                       subtitle="Opens the host's voice room in your browser. Allow the microphone.")
 
     # ------------------------------------------------------------ rendering
@@ -155,7 +159,12 @@ def main(page: ft.Page):
     def on_life(e):
         # Returning from the Play Store moves SETUP along by itself (ignore the blip right after launching it).
         if "resume" not in str(getattr(e, "state", "")).lower() or time.time() - S["t"] < 2: return
-        if S["stage"] in (1, 2): setup()
+        if S["stage"] in (1, 2): return setup()
+        if S["auto"] == "ts" and S["tok"]:
+            for _ in range(4):                      # Tailscale needs a few seconds to come up after "Connect"
+                if check(): S["auto"] = None; return open_moon()
+                time.sleep(2.5)
+            say("Not connected yet - finish Tailscale, then tap Check connection.", True)
 
     page.on_app_lifecycle_state_change = on_life
 
@@ -164,8 +173,10 @@ def main(page: ft.Page):
 
     def load_token():
         try:
+            if not name_field.value.strip(): return say("Enter your name first (Your name box above).", True)
             S["tok"] = decode(token_field.value); S["entry"] = False; S["connected"] = False
-            say(f"Token accepted for host {S['tok']['n']} ({S['tok']['h']}). Now join the network.")
+            say(f"Token accepted for host {S['tok']['n']}. Opening Tailscale - paste the key, tap Connect, then come back.")
+            S["auto"] = "ts"; join_ts()      # chain: Tailscale -> auto-check -> Moonlight opens by itself
         except Exception as e:
             S["tok"] = None; say(f"Invalid token: {e}", True)
 
@@ -173,9 +184,9 @@ def main(page: ft.Page):
         if not S["tok"]: return say("Enter the token first.", True)
         page.set_clipboard(S["tok"]["k"])
         say("Auth key copied. In Tailscale: ⋮ menu → “Use an auth key” → paste → Connect. Then return here and tap Check connection.")
-        page.launch_url(f"intent:#Intent;package={TAILSCALE};end")
+        S["t"] = time.time(); page.launch_url(f"intent:#Intent;package={TAILSCALE};end")
 
-    def check():
+    def check(auto=False):
         if not S["tok"]: return say("Enter the token first.", True)
         try:
             with urllib.request.urlopen(f"http://{S['tok']['h']}:{S['tok']['p']}/info", timeout=6) as r:
@@ -183,11 +194,12 @@ def main(page: ft.Page):
             say("Connected to host over Tailscale ✔" if S["connected"] else "Unexpected reply from host", not S["connected"])
         except Exception as e:
             S["connected"] = False; say(f"Host not reachable yet ({e}). Is Tailscale connected?", True)
+        return S["connected"]
 
     def open_moon():
         if S["tok"]: page.set_clipboard(S["tok"]["h"])
-        say("Host IP copied. In Moonlight: add PC → paste IP → it shows a PIN → type it here.")
-        page.launch_url(f"intent:#Intent;package={MOONLIGHT};end")
+        say("Connected ✔ Moonlight is opening and the host IP is copied: tap + → paste → tap the PC. It shows a PIN - type it here.")
+        S["t"] = time.time(); page.launch_url(f"intent:#Intent;package={MOONLIGHT};end")
 
     def pair():
         if not S["tok"]: return say("Enter the token first.", True)
@@ -212,7 +224,6 @@ def main(page: ft.Page):
         if not S["voice"]: return say("Pair with the host first.", True)
         n = name_field.value.strip()
         if not n: return say("Enter your name first.", True)
-        save("name", n)
         page.launch_url(S["voice"] + "&n=" + urllib.parse.quote(n))
         say("Opening voice chat - allow the microphone, then switch back to Moonlight.")
 
@@ -222,10 +233,11 @@ def main(page: ft.Page):
     # ------------------------------------------------------------ layout
     logo = ft.Container(ft.Icon(ft.Icons.CAST_CONNECTED, color="white", size=24), width=46, height=46, border_radius=14,
                         gradient=GRAD, alignment=ft.alignment.center)
-    header = ft.Row([logo, ft.Column([ft.Text("StreamLink", size=22, weight=ft.FontWeight.BOLD, color="white"),
-                                      ft.Text("Client", size=12, color=DIM)], spacing=0)], spacing=12)
+    who = ft.Text(saved("name") or "Client", size=12, color=DIM)
+    header = ft.Row([logo, ft.Column([ft.Text("StreamLink", size=22, weight=ft.FontWeight.BOLD, color="white"), who],
+                                     spacing=0)], spacing=12)
     page.add(ft.Column([
-        header, hero, t_apps, t_host, t_pair, setup_btn, token_btn, entry_card, connect_card, pair_card, voice_card, status_card,
+        header, hero, name_card, t_apps, t_host, t_pair, setup_btn, token_btn, entry_card, connect_card, pair_card, voice_card, status_card,
     ], spacing=14))
     refresh()
 

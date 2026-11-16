@@ -49,7 +49,7 @@ def main(page: ft.Page):
         except Exception: pass
 
     S = {"stage": int(saved("stage") or 0),       # 0 = not started, 1 = Tailscale page opened, 2 = Moonlight page opened, 3 = done
-         "tok": None, "connected": False, "paired": bool(saved("paired")), "voice": saved("voice"),
+         "tok": None, "connected": False, "paired": bool(saved("paired")), "voice": saved("voice"), "host": saved("host"),
          "entry": False, "t": 0.0, "auto": None, "busy": False}  # auto: "ts" = waiting for user to finish Tailscale
 
     # ------------------------------------------------------------ small UI helpers
@@ -137,6 +137,8 @@ def main(page: ft.Page):
     name_field = ft.TextField(label="Your name", value=saved("name"), max_length=24, border_radius=12, border_color="#2E3566",
                               bgcolor="#0C0F24", prefix_icon=ft.Icons.PERSON, on_change=name_changed)
     name_card = card("Your name", name_field, subtitle="Shown to the host and in voice chat.")
+    start_card = card("Stream", gbtn("Start stream", lambda e: start_stream(), ft.Icons.PLAY_ARROW),
+                      subtitle="Checks that the host is sharing, then opens Moonlight. Tap the PC, then the app.")
     voice_card = card("Voice chat", gbtn("Join voice chat", lambda e: join_voice(), ft.Icons.MIC),
                       subtitle="Opens the host's voice room in your browser. Allow the microphone.")
 
@@ -160,6 +162,7 @@ def main(page: ft.Page):
         entry_card.visible = apps_ok and S["entry"] and not S["paired"]
         connect_card.visible = apps_ok and S["tok"] is not None and not S["paired"]
         pair_card.visible = connect_card.visible
+        start_card.visible = S["paired"]
         voice_card.visible = bool(S["voice"])
         page.update()
 
@@ -245,6 +248,7 @@ def main(page: ft.Page):
         try:
             with urllib.request.urlopen(req, timeout=12) as r: resp = json.loads(r.read())
             if resp.get("ok"):
+                S["host"] = f"{S['tok']['h']}|{S['tok']['p']}"; save("host", S["host"])
                 S.update(tok=None, paired=True, connected=True, voice=resp.get("voice") or "", auto=None)
                 token_field.value = ""; pin_field.value = ""; save("paired", "1"); save("voice", S["voice"])
                 say("Paired ✔ Open Moonlight and start streaming; join voice chat below.")
@@ -259,6 +263,19 @@ def main(page: ft.Page):
             pin_field.value = ""; say(f"Pair failed: {e}", True)
         finally:
             S["busy"] = False; page.update()
+
+    def start_stream():
+        h, _, p = (S["host"] or "").partition("|")
+        if not (h and p): return say("Host address unknown - paste a fresh token to pair again.", True)
+        try:
+            with urllib.request.urlopen(f"http://{h}:{p}/info", timeout=6) as r: info = json.loads(r.read())
+        except Exception as e:
+            return say(f"Can't reach the host ({e}). Is Tailscale connected?", True)
+        if not info.get("streaming"):
+            return say("The host isn't sharing anything yet. Ask them to press START, then tap Start stream again.", True)
+        page.set_clipboard(h)
+        say(f"Host is sharing: {info.get('share') or 'screen'}. Moonlight is opening - tap the PC, then the app to play.")
+        S["t"] = time.time(); page.launch_url(f"intent:#Intent;package={MOONLIGHT};end")
 
     def join_voice():
         if not S["voice"]: return say("Pair with the host first.", True)
@@ -277,7 +294,7 @@ def main(page: ft.Page):
     header = ft.Row([logo, ft.Column([ft.Text("StreamLink", size=22, weight=ft.FontWeight.BOLD, color="white"), who],
                                      spacing=0)], spacing=12)
     page.add(ft.Column([
-        header, hero, name_card, t_apps, t_host, t_pair, setup_btn, have_btn, token_btn, entry_card, connect_card, pair_card, voice_card, status_card,
+        header, hero, name_card, t_apps, t_host, t_pair, setup_btn, have_btn, token_btn, entry_card, connect_card, pair_card, start_card, voice_card, status_card,
     ], spacing=14))
     refresh()
 

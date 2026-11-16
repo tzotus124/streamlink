@@ -1,0 +1,19 @@
+[project]
+name = "streamlink"
+version = "1.0.0"
+description = "StreamLink client: join host over Tailscale and pair Moonlight"
+requires-python = ">=3.9"
+dependencies = ["flet==0.25.2"]
+
+[tool.flet]
+org = "com.streamlink"
+product = "StreamLink"
+company = "StreamLink"
+copyright = "StreamLink"
+
+[tool.flet.app]
+path = "."
+
+[tool.flet.android.permission]
+"android.permission.INTERNET" = true
+"android.permission.ACCESS_NETWORK_STATE" = true

@@ -210,7 +210,7 @@ def main(page: ft.Page):
             if resp.get("ok"):
                 S.update(tok=None, paired=True, connected=True, voice=resp.get("voice") or "")
                 token_field.value = ""; pin_field.value = ""; save("paired", "1"); save("voice", S["voice"])
-                say("Paired ✔ – token used up. Open Moonlight and start streaming; join voice chat below.")
+                say("Paired ✔ Open Moonlight and start streaming; join voice chat below.")
                 page.launch_url(f"intent:#Intent;package={MOONLIGHT};end")
             else:
                 say("Pairing rejected", True)

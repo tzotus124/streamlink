@@ -1,5 +1,5 @@
 """StreamLink Client (Android, Flet).  Build: flet build apk"""
-import base64, json, os, time, urllib.error, urllib.parse, urllib.request
+import base64, json, os, time, urllib.error, urllib.request
 import flet as ft
 
 MOONLIGHT = "com.limelight"
@@ -49,7 +49,7 @@ def main(page: ft.Page):
         except Exception: pass
 
     S = {"stage": int(saved("stage") or 0),       # 0 = not started, 1 = Tailscale page opened, 2 = Moonlight page opened, 3 = done
-         "tok": None, "connected": False, "paired": bool(saved("paired")), "voice": saved("voice"), "host": saved("host"),
+         "tok": None, "connected": False, "paired": bool(saved("paired")), "host": saved("host"),
          "entry": False, "t": 0.0, "auto": None, "busy": False}  # auto: "ts" = waiting for user to finish Tailscale
 
     # ------------------------------------------------------------ small UI helpers
@@ -136,12 +136,9 @@ def main(page: ft.Page):
 
     name_field = ft.TextField(label="Your name", value=saved("name"), max_length=24, border_radius=12, border_color="#2E3566",
                               bgcolor="#0C0F24", prefix_icon=ft.Icons.PERSON, on_change=name_changed)
-    name_card = card("Your name", name_field, subtitle="Shown to the host and in voice chat.")
+    name_card = card("Your name", name_field, subtitle="Shown to the host.")
     start_card = card("Stream", gbtn("Start stream", lambda e: start_stream(), ft.Icons.PLAY_ARROW),
                       subtitle="Checks that the host is sharing, then opens Moonlight. Tap the PC, then the app.")
-    voice_card = card("Voice chat", gbtn("Join voice chat", lambda e: join_voice(), ft.Icons.MIC),
-                      subtitle="Opens the host's voice room in your browser. Allow the microphone.")
-
     # ------------------------------------------------------------ rendering
     def refresh():
         apps_ok = S["stage"] >= 3 or S["paired"]
@@ -163,7 +160,6 @@ def main(page: ft.Page):
         connect_card.visible = apps_ok and S["tok"] is not None and not S["paired"]
         pair_card.visible = connect_card.visible
         start_card.visible = S["paired"]
-        voice_card.visible = bool(S["voice"])
         page.update()
 
     def say(s, bad=False):
@@ -249,9 +245,9 @@ def main(page: ft.Page):
             with urllib.request.urlopen(req, timeout=12) as r: resp = json.loads(r.read())
             if resp.get("ok"):
                 S["host"] = f"{S['tok']['h']}|{S['tok']['p']}"; save("host", S["host"])
-                S.update(tok=None, paired=True, connected=True, voice=resp.get("voice") or "", auto=None)
-                token_field.value = ""; pin_field.value = ""; save("paired", "1"); save("voice", S["voice"])
-                say("Paired ✔ Open Moonlight and start streaming; join voice chat below.")
+                S.update(tok=None, paired=True, connected=True, auto=None)
+                token_field.value = ""; pin_field.value = ""; save("paired", "1")
+                say("Paired ✔ Open Moonlight and start streaming.")
                 page.launch_url(f"intent:#Intent;package={MOONLIGHT};end")
             else:
                 pin_field.value = ""; say("Pairing rejected - Moonlight shows a new PIN each try.", True)
@@ -277,13 +273,6 @@ def main(page: ft.Page):
         say(f"Host is sharing: {info.get('share') or 'screen'}. Moonlight is opening - tap the PC, then the app to play.")
         S["t"] = time.time(); page.launch_url(f"intent:#Intent;package={MOONLIGHT};end")
 
-    def join_voice():
-        if not S["voice"]: return say("Pair with the host first.", True)
-        n = name_field.value.strip()
-        if not n: return say("Enter your name first.", True)
-        page.launch_url(S["voice"] + "&n=" + urllib.parse.quote(n))
-        say("Opening voice chat - allow the microphone, then switch back to Moonlight.")
-
     setup_btn.on_click = setup
     token_btn.on_click = toggle_entry
 
@@ -294,7 +283,7 @@ def main(page: ft.Page):
     header = ft.Row([logo, ft.Column([ft.Text("StreamLink", size=22, weight=ft.FontWeight.BOLD, color="white"), who],
                                      spacing=0)], spacing=12)
     page.add(ft.Column([
-        header, hero, name_card, t_apps, t_host, t_pair, setup_btn, have_btn, token_btn, entry_card, connect_card, pair_card, start_card, voice_card, status_card,
+        header, hero, name_card, t_apps, t_host, t_pair, setup_btn, have_btn, token_btn, entry_card, connect_card, pair_card, start_card, status_card,
     ], spacing=14))
     refresh()
 

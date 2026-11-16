@@ -29,6 +29,11 @@ jobs:
           flutter-version: "3.27.4"
           channel: stable
 
+      - name: Accept Android SDK licenses
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          yes | flutter doctor --android-licenses > /dev/null || true
+
       - name: Install Flet
         run: pip install flet==0.25.2
 
